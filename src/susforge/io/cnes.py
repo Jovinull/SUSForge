@@ -257,12 +257,17 @@ def ingest_raw() -> IngestResult:
         logger.warning("HEAD remoto falhou (%s) — usando fallback offline", exc)
         source = "fallback"
 
-    # ---- 2) Aterrissa a nova partição ----
+    # ---- 2) Aterrissa a nova partição (preservando imutabilidade) ----
     partition_dir = _raw_root() / today.isoformat()
     partition_dir.mkdir(parents=True, exist_ok=True)
     target_csv = partition_dir / f"{DATASET}.csv"
+    previous = manifest.last_extraction
+    created_partition = not any(partition_dir.iterdir())
 
-    if source == "remote":
+    if target_csv.exists():
+        # Re-run no mesmo dia: respeita o que já está em disco.
+        source_hash = _sha256_of(target_csv)
+    elif source == "remote":
         zip_path = partition_dir / f"{DATASET}.zip"
         try:
             _download_zip(SOURCE_URL, zip_path)
@@ -270,31 +275,36 @@ def ingest_raw() -> IngestResult:
         finally:
             if zip_path.exists():
                 zip_path.unlink()
+        source_hash = _sha256_of(target_csv)
     else:
         fallback = _fallback_csv()
         if not fallback.exists():
             raise FileNotFoundError(
                 f"HEAD remoto falhou e fallback ausente: {fallback}"
             )
+        # Hash da fonte antes de copiar — evita I/O quando inalterado.
+        source_hash = _sha256_of(fallback)
+        if previous is not None and previous.source_hash == source_hash:
+            if created_partition:
+                try:
+                    partition_dir.rmdir()
+                except OSError:
+                    pass
+            logger.info(
+                "Fallback igual à última extração %s — pulando cópia",
+                previous.extraction_date,
+            )
+            return _unchanged_result(previous)
         shutil.copy2(fallback, target_csv)
 
-    # ---- 3) Idempotência por hash (essencial no caminho fallback) ----
-    source_hash = _sha256_of(target_csv)
-    if (
-        manifest.last_extraction is not None
-        and manifest.last_extraction.source_hash == source_hash
-    ):
+    # ---- 3) Idempotência por hash (caso remoto baixou conteúdo igual) ----
+    if previous is not None and previous.source_hash == source_hash:
         logger.info(
-            "Conteúdo igual ao processado em %s (hash bate) — descartando partição %s",
-            manifest.last_extraction.extraction_date,
-            today.isoformat(),
+            "Conteúdo igual ao processado em %s (hash bate) — preservando %s",
+            previous.extraction_date,
+            target_csv,
         )
-        target_csv.unlink(missing_ok=True)
-        try:
-            partition_dir.rmdir()
-        except OSError:
-            pass  # diretório não-vazio: deixa como está
-        return _unchanged_result(manifest.last_extraction)
+        return _unchanged_result(previous)
 
     # ---- 4) Registra nova extração no manifesto (atomic) ----
     new_record = ExtractionRecord(
