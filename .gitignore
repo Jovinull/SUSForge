@@ -1,0 +1,120 @@
+# =====================================================================
+# SUSForge - .gitignore
+# Regra de ouro: NENHUM dado bruto, intermediário ou processado entra
+# no repositório. O Git versiona código, schemas e infraestrutura.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Lake local (dados nunca versionados)
+# ---------------------------------------------------------------------
+data/raw/
+data/staging/
+data/processed/
+!data/raw/.gitkeep
+!data/staging/.gitkeep
+!data/processed/.gitkeep
+
+# Extensões de dados — bloqueio defensivo, caso alguém crie pasta nova
+*.dbc
+*.dbf
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.arrow
+*.orc
+*.avro
+*.xlsx
+*.xls
+*.json.gz
+*.csv.gz
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# ---------------------------------------------------------------------
+# Credenciais e variáveis de ambiente
+# ---------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+.secrets/
+
+# ---------------------------------------------------------------------
+# Docker — volumes e estado local
+# ---------------------------------------------------------------------
+.docker/
+docker-volumes/
+volumes/
+**/postgres-data/
+**/airflow-data/
+**/metabase-data/
+**/pgdata/
+
+# ---------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# ---------------------------------------------------------------------
+# Airflow — estado e logs locais
+# ---------------------------------------------------------------------
+airflow/logs/
+airflow/airflow.db
+airflow/airflow.cfg
+airflow/webserver_config.py
+airflow/standalone_admin_password.txt
+
+# ---------------------------------------------------------------------
+# Metabase — estado local
+# ---------------------------------------------------------------------
+metabase.db/
+metabase.db.mv.db
+metabase.db.trace.db
+
+# ---------------------------------------------------------------------
+# IDEs / editores
+# ---------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------
+# Logs e temporários
+# ---------------------------------------------------------------------
+*.log
+logs/
+tmp/
+temp/
+.cache/
