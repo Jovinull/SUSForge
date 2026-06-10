@@ -278,4 +278,93 @@ Ao gerar código para este projeto, agentes DEVEM:
 
 ---
 
-_Última revisão: 2026-06-10 — bootstrap inicial do projeto._
+---
+
+## 9. Operação da Stack Local (Docker Compose)
+
+A stack completa sobe com um único comando a partir da raiz do projeto.
+
+### 9.1 Pré-requisitos
+
+- Docker Engine 24+ e plugin `docker compose` v2+.
+- Portas livres no host: **5432** (Postgres), **8080** (Airflow), **3000**
+  (Metabase). Todas podem ser remapeadas via `.env`.
+- Arquivo `.env` populado a partir de `.env.example`:
+  ```bash
+  cp .env.example .env
+  # editar credenciais antes do primeiro boot
+  ```
+
+### 9.2 Subir, parar e resetar
+
+| Ação                              | Comando                          | Observação                                                |
+|-----------------------------------|----------------------------------|-----------------------------------------------------------|
+| Subir tudo em segundo plano       | `docker compose up -d`           | Primeira execução: ~2 min (puxa imagens + init Airflow).  |
+| Acompanhar logs                   | `docker compose logs -f`         | Use `-f <serviço>` para filtrar (ex.: `airflow-scheduler`). |
+| Parar (preservando dados)         | `docker compose down`            | Volumes nomeados ficam intactos.                          |
+| Reset destrutivo (apaga volumes)  | `docker compose down -v`         | **APAGA** Postgres, Metabase e logs do Airflow.           |
+| Validar sintaxe do compose        | `docker compose config --quiet`  | Útil em CI ou após editar o yaml.                         |
+| Status dos serviços               | `docker compose ps`              | Mostra estado e healthcheck de cada contêiner.            |
+
+### 9.3 Ordem de boot e dependências
+
+1. **`postgres`** sobe e roda `01_init.sql` no primeiro boot, criando
+   `airflow_db`, `metabase_db`, os schemas Medalhão (`bronze`, `silver`,
+   `gold`) e habilitando `postgis` no banco `susforge`.
+2. **`airflow-init`** aguarda Postgres `healthy`, roda `airflow db
+   migrate` e cria o usuário admin. Encerra após concluir.
+3. **`airflow-webserver`** e **`airflow-scheduler`** dependem do
+   `airflow-init` ter terminado com sucesso (`service_completed_successfully`).
+4. **`metabase`** sobe em paralelo com o Airflow, apontando seu
+   metadado interno para o `metabase_db` no Postgres (sem H2).
+
+### 9.4 Endpoints e credenciais padrão
+
+> Os valores abaixo refletem o `.env.example`. **Troque tudo antes de
+> qualquer uso compartilhado** — as senhas marcadas como `*_change_me`
+> existem apenas para subir a stack na primeira vez.
+
+| Serviço            | URL                          | Usuário               | Senha                  |
+|--------------------|------------------------------|-----------------------|------------------------|
+| Airflow Web UI     | http://localhost:8080        | `${AIRFLOW_ADMIN_USER}` | `${AIRFLOW_ADMIN_PASSWORD}` |
+| Metabase           | http://localhost:3000        | criado no 1º acesso   | criado no 1º acesso    |
+| Postgres analítico | `localhost:5432` / `susforge`| `${POSTGRES_USER}`    | `${POSTGRES_PASSWORD}` |
+| Airflow metadata DB| `postgres:5432` / `airflow_db` | `${POSTGRES_USER}`  | `${POSTGRES_PASSWORD}` |
+| Metabase metadata  | `postgres:5432` / `metabase_db`| `${POSTGRES_USER}`  | `${POSTGRES_PASSWORD}` |
+
+Conexão pré-cadastrada no Airflow (via env): `susforge_pg` aponta para
+o banco analítico — útil em `PostgresHook` e `PostgresOperator` dentro
+das DAGs.
+
+### 9.5 Verificações rápidas pós-boot
+
+```bash
+# Schemas Medalhão criados?
+docker compose exec postgres psql -U "$POSTGRES_USER" -d susforge \
+  -c "\dn"
+
+# PostGIS habilitado?
+docker compose exec postgres psql -U "$POSTGRES_USER" -d susforge \
+  -c "SELECT postgis_full_version();"
+
+# Healthcheck do Airflow
+curl -s http://localhost:8080/health | jq .
+
+# Healthcheck do Metabase
+curl -s http://localhost:3000/api/health
+```
+
+### 9.6 Notas de segurança
+
+- As credenciais distribuídas em `.env.example` (`*_change_me`,
+  `change_me_in_production_*`) **NÃO** servem para produção.
+- A `AIRFLOW_FERNET_KEY` exemplo deve ser regenerada para qualquer
+  ambiente não-descartável (comando no topo do `.env.example`).
+- Hoje o stack usa um único superusuário Postgres compartilhado por
+  Airflow, Metabase e analytics. Endurecimento de produção: criar
+  roles dedicadas (`airflow`, `metabase`, `susforge_app`,
+  `susforge_ro`) com privilégios mínimos.
+
+---
+
+_Última revisão: 2026-06-10 — bootstrap inicial + stack Docker Compose._
