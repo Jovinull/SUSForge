@@ -123,6 +123,16 @@ class Settings(BaseSettings):
         default_factory=DatabaseSettings,  # type: ignore[arg-type]
     )
     project_root: Path = Field(default=PROJECT_ROOT, description="Raiz do repositório.")
+    data_dir: Path = Field(
+        default=PROJECT_ROOT / "data",
+        validation_alias="SUSFORGE_DATA_DIR",
+        description="Raiz do data lake (raw, staging, processed).",
+    )
+    docs_dir: Path = Field(
+        default=PROJECT_ROOT / "docs",
+        validation_alias="SUSFORGE_DOCS_DIR",
+        description="Pasta com dicionários, swaggers e fallbacks offline.",
+    )
 
 
 @lru_cache(maxsize=1)

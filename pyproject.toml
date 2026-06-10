@@ -63,7 +63,12 @@ indent-style = "space"
 python_version = "3.11"
 strict = true
 ignore_missing_imports = true
+# DAGs do Airflow ficam fora do escopo strict — TaskFlow API envolve
+# retornos em XComArg, que mypy strict marca como incompatíveis com
+# parâmetros tipados das próximas tasks. Lint (ruff) e os smoke tests
+# de import já garantem a sanidade.
 files = ["src", "tests"]
+exclude = "^airflow/"
 show_error_codes = true
 show_column_numbers = true
 pretty = true

@@ -41,14 +41,20 @@ x-airflow-common-env: &airflow-common-env
   AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: America/Sao_Paulo
   AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
   PYTHONDONTWRITEBYTECODE: "1"
-  # Instala FAB provider na primeira subida (atalho de DEV — em prod
-  # construir imagem customizada em infra/docker/airflow/Dockerfile).
-  _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-apache-airflow-providers-fab>=2.0.0}
+  # Instala FAB provider e libs do SUSForge na primeira subida (atalho
+  # de DEV — em prod construir imagem customizada em infra/docker/airflow/
+  # Dockerfile com `pip install -e /opt/susforge` baked).
+  _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-apache-airflow-providers-fab>=2.0.0 polars>=1.0.0 pandera>=0.20.0 requests>=2.31.0}
+  # Expõe o pacote `susforge` ao Python das DAGs sem precisar de pip install
+  PYTHONPATH: "/opt/susforge/src"
   # Conexão pré-cadastrada para o banco analítico do SUSForge
   AIRFLOW_CONN_SUSFORGE_PG: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
   # Variáveis SUSFORGE_DB_* para os clientes Python das DAGs
   SUSFORGE_DB_HOST: postgres
   SUSFORGE_DB_PORT: "5432"
+  # Paths do data lake dentro do contêiner
+  SUSFORGE_DATA_DIR: "/opt/susforge/data"
+  SUSFORGE_DOCS_DIR: "/opt/susforge/docs"
 
 x-airflow-common: &airflow-common
   image: apache/airflow:3.2.2-python3.12
@@ -59,6 +65,13 @@ x-airflow-common: &airflow-common
     - ./airflow/plugins:/opt/airflow/plugins
     - ./airflow/config:/opt/airflow/config
     - airflow_logs:/opt/airflow/logs
+    # Pacote `susforge` exposto via PYTHONPATH (sem rebuild de imagem)
+    - ./src:/opt/susforge/src:ro
+    # Data lake local — DAGs precisam aterrissar arquivos em raw/staging
+    - ./data:/opt/susforge/data
+    # Bibliotecas de referência (sobre.txt, swagger.txt, dicionários e
+    # CSVs de fallback para ingestão offline)
+    - ./docs:/opt/susforge/docs:ro
   networks:
     - susforge-net
 

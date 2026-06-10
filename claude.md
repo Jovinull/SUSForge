@@ -312,9 +312,14 @@ A stack completa sobe com um único comando a partir da raiz do projeto.
    `airflow_db`, `metabase_db`, os schemas Medalhão (`bronze`, `silver`,
    `gold`) e habilitando `postgis` no banco `susforge`.
 2. **`airflow-init`** aguarda Postgres `healthy`, roda `airflow db
-   migrate` e cria o usuário admin. Encerra após concluir.
-3. **`airflow-webserver`** e **`airflow-scheduler`** dependem do
-   `airflow-init` ter terminado com sucesso (`service_completed_successfully`).
+   migrate` e cria o usuário admin via FAB. Encerra após concluir.
+3. **`airflow-apiserver`**, **`airflow-scheduler`** e
+   **`airflow-dag-processor`** dependem do `airflow-init` ter
+   terminado com sucesso (`service_completed_successfully`).
+   - O `apiserver` (FastAPI) serve UI + REST API.
+   - O `scheduler` agenda tasks (LocalExecutor).
+   - O `dag-processor` faz parsing das DAGs — serviço dedicado
+     **a partir do Airflow 3.x** (antes era embutido no scheduler).
 4. **`metabase`** sobe em paralelo com o Airflow, apontando seu
    metadado interno para o `metabase_db` no Postgres (sem H2).
 
@@ -347,8 +352,8 @@ docker compose exec postgres psql -U "$POSTGRES_USER" -d susforge \
 docker compose exec postgres psql -U "$POSTGRES_USER" -d susforge \
   -c "SELECT postgis_full_version();"
 
-# Healthcheck do Airflow
-curl -s http://localhost:8080/health | jq .
+# Healthcheck do Airflow (api-server FastAPI em v3)
+curl -s http://localhost:8080/api/v2/monitor/health | jq .
 
 # Healthcheck do Metabase
 curl -s http://localhost:3000/api/health
