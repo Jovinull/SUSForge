@@ -1,0 +1,44 @@
+# =====================================================================
+# SUSForge — Dependências de runtime
+# ---------------------------------------------------------------------
+# Camada de orquestração + ETL local. Os contêineres do Airflow trazem
+# `apache-airflow` pré-instalado; aqui ele entra para suportar
+# importação/lint de DAGs no host (IDE, mypy, testes).
+#
+# Instalação:
+#   python -m venv .venv
+#   source .venv/bin/activate
+#   pip install -U pip wheel
+#   pip install -r requirements.txt
+#
+# Para Airflow respeitar suas constraints oficiais (recomendado):
+#   AIRFLOW_VERSION=2.10.4
+#   PYTHON_VERSION=3.11
+#   CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+#   pip install "apache-airflow==${AIRFLOW_VERSION}" --constraint "${CONSTRAINT_URL}"
+# =====================================================================
+
+# Orquestração
+apache-airflow>=2.10.0,<3.0.0
+
+# Processamento colunar (Polars é o padrão; Pandas é proibido no caminho quente)
+polars>=1.0.0
+
+# Validação de dataframes e schemas declarativos
+pandera>=0.20.0
+
+# Modelos tipados e configuração via env
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# HTTP para downloads do OpenDATASUS
+requests>=2.31.0
+
+# Camada de banco
+# NOTA: Airflow 2.x exige SQLAlchemy<2.0 (constraint upstream). Quando
+# migrarmos para Airflow 3, podemos liberar SQLAlchemy 2.x.
+SQLAlchemy>=1.4.36,<2.0
+psycopg2-binary>=2.9.9
+
+# CLI do projeto (susforge ...)
+typer>=0.12.0
