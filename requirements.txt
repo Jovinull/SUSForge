@@ -11,15 +11,20 @@
 #   pip install -U pip wheel
 #   pip install -r requirements.txt
 #
-# Para Airflow respeitar suas constraints oficiais (recomendado):
-#   AIRFLOW_VERSION=2.10.4
-#   PYTHON_VERSION=3.11
+# Para Airflow respeitar suas constraints oficiais (OBRIGATÓRIO):
+#   AIRFLOW_VERSION=3.2.2
+#   PYTHON_VERSION=3.12
 #   CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
-#   pip install "apache-airflow==${AIRFLOW_VERSION}" --constraint "${CONSTRAINT_URL}"
+#   pip install --constraint "${CONSTRAINT_URL}" -r requirements.txt
 # =====================================================================
 
-# Orquestração
-apache-airflow>=2.10.0,<3.0.0
+# Orquestração — Airflow 3.2.x: SQLAlchemy 2 + Flask 3 + cryptography
+# moderna. As séries 3.0.x e 3.1.0–3.1.7 ainda pinam SQLAlchemy 1.4,
+# por isso fixamos em 3.2.x para de fato eliminar a dívida técnica.
+# Pin EXATO para casar com a imagem no docker-compose.yml.
+apache-airflow==3.2.2
+# FAB Auth Manager — preserva fluxo `airflow users create` e admin via env
+apache-airflow-providers-fab
 
 # Processamento colunar (Polars é o padrão; Pandas é proibido no caminho quente)
 polars>=1.0.0
@@ -34,10 +39,8 @@ pydantic-settings>=2.1.0
 # HTTP para downloads do OpenDATASUS
 requests>=2.31.0
 
-# Camada de banco
-# NOTA: Airflow 2.x exige SQLAlchemy<2.0 (constraint upstream). Quando
-# migrarmos para Airflow 3, podemos liberar SQLAlchemy 2.x.
-SQLAlchemy>=1.4.36,<2.0
+# Camada de banco — SQLAlchemy 2.x liberado pelo Airflow 3
+SQLAlchemy>=2.0.0,<3.0.0
 psycopg2-binary>=2.9.9
 
 # CLI do projeto (susforge ...)

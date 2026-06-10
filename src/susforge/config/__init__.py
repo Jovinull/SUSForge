@@ -28,11 +28,18 @@ ENV_FILE: Path = PROJECT_ROOT / ".env"
 class DatabaseSettings(BaseSettings):
     """Conexão com o banco analítico SUSForge (Postgres + PostGIS).
 
-    Por padrão aponta para o serviço Postgres do `docker-compose.yml`
-    acessado a partir do host (porta exposta em `POSTGRES_HOST_PORT`).
-    Para execução **dentro** da rede do Compose (ex.: DAGs Airflow nos
-    contêineres), sobrescreva `SUSFORGE_DB_HOST=postgres` e
-    `SUSFORGE_DB_PORT=5432` no ambiente do contêiner.
+    Variáveis dedicadas (não confundir com as do contêiner Postgres):
+
+        SUSFORGE_DB_HOST     hostname do banco (default ``localhost``,
+                             use ``postgres`` dentro da rede Compose).
+        SUSFORGE_DB_PORT     porta TCP (default ``5432``).
+        POSTGRES_USER        usuário (reaproveitado do .env do Postgres).
+        POSTGRES_PASSWORD    senha (idem).
+        POSTGRES_DB          nome do banco analítico (idem).
+
+    A separação entre ``SUSFORGE_DB_*`` (cliente) e ``POSTGRES_HOST_PORT``
+    (mapping host↔contêiner do Compose) evita que mudar o mapping no
+    ``docker-compose.yml`` quebre os clientes Python.
 
     A leitura é case-insensitive e ignora variáveis extras do `.env`
     (Airflow, Metabase, etc.) para evitar acoplamento.
@@ -52,8 +59,11 @@ class DatabaseSettings(BaseSettings):
     )
     port: int = Field(
         default=5432,
-        validation_alias="POSTGRES_HOST_PORT",
-        description="Porta do Postgres exposta no host.",
+        validation_alias="SUSFORGE_DB_PORT",
+        description=(
+            "Porta do Postgres. Use 5432 dentro do Compose; ajuste se "
+            "POSTGRES_HOST_PORT divergir no acesso a partir do host."
+        ),
         ge=1,
         le=65535,
     )
@@ -106,7 +116,12 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    # mypy não enxerga que BaseSettings.__init__ aceita zero args
+    # (a "mágica" vinha do plugin pydantic.mypy, removido por
+    # incompatibilidade com mypy 2.x).
+    database: DatabaseSettings = Field(
+        default_factory=DatabaseSettings,  # type: ignore[arg-type]
+    )
     project_root: Path = Field(default=PROJECT_ROOT, description="Raiz do repositório.")
 
 
