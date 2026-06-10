@@ -1,0 +1,198 @@
+# =====================================================================
+# SUSForge — Stack de Infraestrutura Local
+# ---------------------------------------------------------------------
+# Serviços:
+#   - postgres            : PostgreSQL 16 + PostGIS 3.4 (analytics + apps)
+#   - airflow-init        : one-shot: db migrate + cria admin
+#   - airflow-webserver   : UI/API do Airflow (porta ${AIRFLOW_PORT})
+#   - airflow-scheduler   : scheduler com LocalExecutor
+#   - metabase            : BI sobre o banco analítico (porta ${METABASE_PORT})
+#
+# Sobe com:   docker compose up -d
+# Derruba:    docker compose down            (mantém volumes)
+# Reset full: docker compose down -v         (APAGA dados — cuidado!)
+# =====================================================================
+
+x-airflow-common-env: &airflow-common-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+  AIRFLOW__CORE__DEFAULT_TIMEZONE: America/Sao_Paulo
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+  AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: America/Sao_Paulo
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${AIRFLOW_DB_NAME}
+  AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+  AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+  PYTHONDONTWRITEBYTECODE: "1"
+  # Conexão pré-cadastrada para o banco analítico do SUSForge
+  AIRFLOW_CONN_SUSFORGE_PG: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.4-python3.11
+  user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
+  environment: *airflow-common-env
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/config:/opt/airflow/config
+    - airflow_logs:/opt/airflow/logs
+  networks:
+    - susforge-net
+
+services:
+  # ===================================================================
+  # PostgreSQL 16 + PostGIS 3.4
+  # ===================================================================
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: susforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - susforge-net
+
+  # ===================================================================
+  # Airflow — init (one-shot: db migrate + cria admin)
+  # ===================================================================
+  airflow-init:
+    <<: *airflow-common
+    container_name: susforge-airflow-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+      _AIRFLOW_WWW_USER_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME}
+      _AIRFLOW_WWW_USER_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME}
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -euo pipefail
+        echo ">> [airflow-init] running db migrate"
+        airflow db migrate
+        echo ">> [airflow-init] ensuring admin user exists"
+        airflow users create \
+          --username "$${_AIRFLOW_WWW_USER_USERNAME}" \
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD}" \
+          --firstname "$${_AIRFLOW_WWW_USER_FIRSTNAME}" \
+          --lastname  "$${_AIRFLOW_WWW_USER_LASTNAME}" \
+          --role Admin \
+          --email "$${_AIRFLOW_WWW_USER_EMAIL}" || \
+          echo ">> [airflow-init] admin already exists, skipping"
+        echo ">> [airflow-init] done"
+    restart: "no"
+
+  # ===================================================================
+  # Airflow — Webserver (UI / API)
+  # ===================================================================
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: susforge-airflow-webserver
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    command: webserver
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8080/health | grep -q '\"status\": \"healthy\"' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ===================================================================
+  # Airflow — Scheduler (LocalExecutor)
+  # ===================================================================
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: susforge-airflow-scheduler
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --local || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ===================================================================
+  # Metabase — BI sobre o banco analítico
+  # ===================================================================
+  metabase:
+    image: metabase/metabase:v0.51.5
+    container_name: susforge-metabase
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: ${METABASE_DB_NAME}
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${POSTGRES_USER}
+      MB_DB_PASS: ${POSTGRES_PASSWORD}
+      MB_DB_HOST: postgres
+      MB_SITE_LOCALE: ${METABASE_SITE_LOCALE:-pt_BR}
+      JAVA_TIMEZONE: America/Sao_Paulo
+    ports:
+      - "${METABASE_PORT:-3000}:3000"
+    volumes:
+      - metabase_data:/metabase-data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks:
+      - susforge-net
+
+# =====================================================================
+# Volumes nomeados — sobrevivem a `docker compose down`
+# =====================================================================
+volumes:
+  postgres_data:
+    name: susforge_postgres_data
+  airflow_logs:
+    name: susforge_airflow_logs
+  metabase_data:
+    name: susforge_metabase_data
+
+# =====================================================================
+# Network bridge dedicada — isolamento de serviços
+# =====================================================================
+networks:
+  susforge-net:
+    name: susforge-net
+    driver: bridge
