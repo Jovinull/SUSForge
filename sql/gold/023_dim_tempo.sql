@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS ix_dim_tempo_ano_mes   ON gold.dim_tempo (ano_mes);
 CREATE INDEX IF NOT EXISTS ix_dim_tempo_trim      ON gold.dim_tempo (ano, trimestre);
 
 COMMENT ON TABLE  gold.dim_tempo IS
-    'Dimensão temporal canônica (diária). Permite drill-down ano/trim/mês/sem no Metabase e JOIN com qualquer fato via data ou ano_mes.';
+    'Dimensão temporal canônica (diária). Permite drill-down ano/trim/mês/sem no frontend BI e JOIN com qualquer fato via data ou ano_mes.';
 COMMENT ON COLUMN gold.dim_tempo.ano_mes IS
     'Competência mensal "YYYYMM" — formato compartilhado com fato_leitos_anual.comp e fato_ocupacao_covid.ano_mes.';
 COMMENT ON COLUMN gold.dim_tempo.eh_periodo_covid IS

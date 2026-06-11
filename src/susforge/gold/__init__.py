@@ -4,5 +4,5 @@ Responsabilidades:
     - Construção de star schemas (`fato_*`, `dim_*`, `agg_*`).
     - Geração de chaves substitutas (`sk_*`).
     - Dimensões conformes compartilhadas entre fatos.
-    - Materializações otimizadas para queries do Metabase.
+    - Materializações otimizadas para queries do frontend Next.js.
 """

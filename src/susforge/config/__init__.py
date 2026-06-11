@@ -42,7 +42,7 @@ class DatabaseSettings(BaseSettings):
     ``docker-compose.yml`` quebre os clientes Python.
 
     A leitura é case-insensitive e ignora variáveis extras do `.env`
-    (Airflow, Metabase, etc.) para evitar acoplamento.
+    (Airflow, frontend, etc.) para evitar acoplamento.
     """
 
     model_config = SettingsConfigDict(

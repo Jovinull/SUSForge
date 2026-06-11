@@ -100,6 +100,20 @@ metabase.db.mv.db
 metabase.db.trace.db
 
 # ---------------------------------------------------------------------
+# Node.js / Next.js (frontend)
+# ---------------------------------------------------------------------
+node_modules/
+.next/
+out/
+.pnp
+.pnp.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+next-env.d.ts
+
+# ---------------------------------------------------------------------
 # IDEs / editores
 # ---------------------------------------------------------------------
 .vscode/

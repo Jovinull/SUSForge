@@ -30,7 +30,7 @@ de alta performance para consumo analítico, epidemiológico e de gestão.
 ### 1.2 Escopo
 
 - **Dentro do escopo**: ingestão de OpenDATASUS, modelagem dimensional,
-  publicação em Metabase, orquestração via Airflow.
+  publicação em frontend Next.js custom, orquestração via Airflow.
 - **Fora do escopo (nesta fase)**: dados clínicos identificáveis, dados
   protegidos por LGPD em nível individual, integração com prontuários.
 
@@ -72,7 +72,7 @@ adaptado para o ecossistema OpenDATASUS.
 ### 2.3 Gold — Modelagem Dimensional para BI
 
 - **Conteúdo**: star schemas Kimball — fatos e dimensões prontos para
-  consumo analítico no Metabase.
+  consumo analítico no frontend Next.js (App Router + Server Components).
 - **Camada física**: schema `gold` no Postgres.
 - **Regras**:
   - Nomenclatura: `fato_*`, `dim_*`, `agg_*`.
@@ -94,7 +94,7 @@ OpenDATASUS  ─►  data/raw/  ─►  schema bronze
                               schema gold    (fatos / dimensões Kimball)
                                     │
                                     ▼
-                                 Metabase
+                          Frontend Next.js (BI custom)
 ```
 
 Cada promoção é uma DAG do Airflow; cada DAG é idempotente e
@@ -112,7 +112,7 @@ re-executável por janela temporal (competência DATASUS).
 | Processamento       | Python 3.11+ com Polars             | ETL colunar de alta performance             |
 | Conversão DBC       | `pyreaddbc` / `datasus-dbc`         | `.dbc → .parquet` na camada Bronze          |
 | Geoprocessamento    | PostGIS, GeoPandas (somente borda)  | Malhas IBGE, regiões de saúde               |
-| BI / Visualização   | Metabase                            | Dashboards analíticos sobre o Gold          |
+| BI / Visualização   | Next.js 15 + Tailwind + Recharts    | Dashboards customizados em React Server     |
 | Qualidade de código | ruff, mypy, pytest                  | Lint, tipagem, testes                       |
 
 **Regra de stack**: nada de Pandas no caminho quente.  Polars é o padrão.
@@ -176,7 +176,7 @@ re-executável por janela temporal (competência DATASUS).
 
 - **Imagens versionadas** (sem `:latest` em produção/composição).
 - **Multi-stage builds** para Python quando aplicável.
-- **Volumes nomeados** para estado persistente (Postgres, Metabase).
+- **Volumes nomeados** para estado persistente (Postgres, node_modules do frontend).
 - **Healthchecks** em todos os serviços.
 - **Networks** explícitas; sem `host` networking.
 
@@ -196,7 +196,8 @@ re-executável por janela temporal (competência DATASUS).
 SUSForge/
 ├── claude.md                       # ESTE arquivo — governança do projeto
 ├── README.md                       # Visão executiva e quickstart
-├── docker-compose.yml              # Stack completa (Postgres+PostGIS, Airflow, Metabase)
+├── docker-compose.yml              # Stack completa (Postgres+PostGIS, Airflow, Frontend Next.js)
+├── frontend/                       # BI custom Next.js (App Router)
 ├── requirements.txt                # Dependências Python (camada de orquestração)
 ├── .gitignore                      # Blindagem contra commit de dados/segredos
 │
@@ -217,7 +218,7 @@ SUSForge/
 │   └── docker/
 │       ├── postgres/               # Dockerfile, init scripts, extensões (PostGIS)
 │       ├── airflow/                # Dockerfile customizado do Airflow
-│       └── metabase/               # Configurações de inicialização do Metabase
+│       └── frontend/               # Dockerfile do Next.js (node:20-alpine)
 │
 ├── src/                            # Código de produção (src-layout)
 │   └── susforge/                   # Pacote Python principal
@@ -255,7 +256,7 @@ SUSForge/
 
 - Dados do OpenDATASUS são **públicos**, mas o tratamento segue boas
   práticas: sem PII identificável em camadas analíticas.
-- Credenciais (Postgres, Metabase, Airflow) **somente** em `.env` local
+- Credenciais (Postgres, Airflow) **somente** em `.env` local
   (template em `.env.example`, que pode ser versionado vazio).
 - Segredos em produção (quando houver) via secret manager — nunca em
   imagem Docker, nunca em commit.
@@ -288,7 +289,7 @@ A stack completa sobe com um único comando a partir da raiz do projeto.
 
 - Docker Engine 24+ e plugin `docker compose` v2+.
 - Portas livres no host: **5432** (Postgres), **8080** (Airflow), **3000**
-  (Metabase). Todas podem ser remapeadas via `.env`.
+  (Frontend Next.js). Todas podem ser remapeadas via `.env`.
 - Arquivo `.env` populado a partir de `.env.example`:
   ```bash
   cp .env.example .env
@@ -302,15 +303,15 @@ A stack completa sobe com um único comando a partir da raiz do projeto.
 | Subir tudo em segundo plano       | `docker compose up -d`           | Primeira execução: ~2 min (puxa imagens + init Airflow).  |
 | Acompanhar logs                   | `docker compose logs -f`         | Use `-f <serviço>` para filtrar (ex.: `airflow-scheduler`). |
 | Parar (preservando dados)         | `docker compose down`            | Volumes nomeados ficam intactos.                          |
-| Reset destrutivo (apaga volumes)  | `docker compose down -v`         | **APAGA** Postgres, Metabase e logs do Airflow.           |
+| Reset destrutivo (apaga volumes)  | `docker compose down -v`         | **APAGA** Postgres, logs do Airflow e node_modules do frontend. |
 | Validar sintaxe do compose        | `docker compose config --quiet`  | Útil em CI ou após editar o yaml.                         |
 | Status dos serviços               | `docker compose ps`              | Mostra estado e healthcheck de cada contêiner.            |
 
 ### 9.3 Ordem de boot e dependências
 
 1. **`postgres`** sobe e roda `01_init.sql` no primeiro boot, criando
-   `airflow_db`, `metabase_db`, os schemas Medalhão (`bronze`, `silver`,
-   `gold`) e habilitando `postgis` no banco `susforge`.
+   `airflow_db`, os schemas Medalhão (`bronze`, `silver`, `gold`) e
+   habilitando `postgis` no banco `susforge`.
 2. **`airflow-init`** aguarda Postgres `healthy`, roda `airflow db
    migrate` e cria o usuário admin via FAB. Encerra após concluir.
 3. **`airflow-apiserver`**, **`airflow-scheduler`** e
@@ -320,8 +321,8 @@ A stack completa sobe com um único comando a partir da raiz do projeto.
    - O `scheduler` agenda tasks (LocalExecutor).
    - O `dag-processor` faz parsing das DAGs — serviço dedicado
      **a partir do Airflow 3.x** (antes era embutido no scheduler).
-4. **`metabase`** sobe em paralelo com o Airflow, apontando seu
-   metadado interno para o `metabase_db` no Postgres (sem H2).
+4. **`frontend`** sobe em paralelo com o Airflow, conectando direto
+   ao Postgres via `pg` (Pool) para queries server-side da Camada Gold.
 
 ### 9.4 Endpoints e credenciais padrão
 
@@ -332,10 +333,9 @@ A stack completa sobe com um único comando a partir da raiz do projeto.
 | Serviço            | URL                          | Usuário               | Senha                  |
 |--------------------|------------------------------|-----------------------|------------------------|
 | Airflow Web UI     | http://localhost:8080        | `${AIRFLOW_ADMIN_USER}` | `${AIRFLOW_ADMIN_PASSWORD}` |
-| Metabase           | http://localhost:3000        | criado no 1º acesso   | criado no 1º acesso    |
+| Frontend BI        | http://localhost:3000        | sem login             | sem login              |
 | Postgres analítico | `localhost:5432` / `susforge`| `${POSTGRES_USER}`    | `${POSTGRES_PASSWORD}` |
 | Airflow metadata DB| `postgres:5432` / `airflow_db` | `${POSTGRES_USER}`  | `${POSTGRES_PASSWORD}` |
-| Metabase metadata  | `postgres:5432` / `metabase_db`| `${POSTGRES_USER}`  | `${POSTGRES_PASSWORD}` |
 
 Conexão pré-cadastrada no Airflow (via env): `susforge_pg` aponta para
 o banco analítico — útil em `PostgresHook` e `PostgresOperator` dentro
@@ -355,7 +355,7 @@ docker compose exec postgres psql -U "$POSTGRES_USER" -d susforge \
 # Healthcheck do Airflow (api-server FastAPI em v3)
 curl -s http://localhost:8080/api/v2/monitor/health | jq .
 
-# Healthcheck do Metabase
+# Healthcheck do frontend Next.js
 curl -s http://localhost:3000/api/health
 ```
 
@@ -366,8 +366,8 @@ curl -s http://localhost:3000/api/health
 - A `AIRFLOW_FERNET_KEY` exemplo deve ser regenerada para qualquer
   ambiente não-descartável (comando no topo do `.env.example`).
 - Hoje o stack usa um único superusuário Postgres compartilhado por
-  Airflow, Metabase e analytics. Endurecimento de produção: criar
-  roles dedicadas (`airflow`, `metabase`, `susforge_app`,
+  Airflow, frontend e analytics. Endurecimento de produção: criar
+  roles dedicadas (`airflow`, `frontend_ro`, `susforge_app`,
   `susforge_ro`) com privilégios mínimos.
 
 ---

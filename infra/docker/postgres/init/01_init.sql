@@ -5,7 +5,7 @@
 -- superusuário ${POSTGRES_USER} definido em .env.
 --
 -- Responsabilidades:
---   1. Criar bancos auxiliares (Airflow e Metabase).
+--   1. Criar o banco auxiliar do Airflow.
 --   2. Criar schemas da arquitetura Medalhão no banco analítico.
 --   3. Habilitar PostGIS no banco analítico (geometria, geografia,
 --      topologia — usado em dim_municipio, regiões de saúde, etc.).
@@ -20,11 +20,6 @@
 -- Airflow guarda DAG runs, XComs, conexões e estado do scheduler aqui.
 SELECT 'CREATE DATABASE airflow_db'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'airflow_db')\gexec
-
--- Metabase guarda dashboards, perguntas, usuários e configurações aqui
--- (substitui o H2 embutido, que não é adequado para produção).
-SELECT 'CREATE DATABASE metabase_db'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'metabase_db')\gexec
 
 -- ---------------------------------------------------------------------
 -- 2. Banco analítico — schemas Medalhão + PostGIS
