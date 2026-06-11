@@ -51,8 +51,12 @@ BASE_URL: Final = "https://s3.sa-east-1.amazonaws.com/ckan.saude.gov.br/Leitos_S
 FIRST_YEAR: Final = 2007
 FALLBACK_RELATIVE: Final = Path("assistencia-saude") / "Hospitais e Leitos"
 
-CSV_SEPARATOR: Final = ","
 CSV_ENCODING: Final = "latin-1"
+# Separador detectado por arquivo (vide ``_detect_separator``). O MS
+# mudou silenciosamente de ``,`` para ``;`` em 2025 — não confiamos
+# em nenhum default global.
+CANDIDATE_SEPARATORS: Final[tuple[str, ...]] = (",", ";")
+DEFAULT_SEPARATOR: Final = ","
 HTTP_TIMEOUT_S: Final = 600
 IO_CHUNK_BYTES: Final = 1 << 20  # 1 MiB
 PARQUET_COMPRESSION: Final = "zstd"
@@ -165,6 +169,41 @@ def _save_manifest(manifest: Manifest) -> None:
 # =====================================================================
 # I/O primitivas
 # =====================================================================
+def _detect_separator(csv_path: Path) -> str:
+    """Detecta o separador real do CSV pela linha de cabeçalho.
+
+    Estratégia: lê só a primeira linha (cheap), conta ocorrências de
+    ``,`` e ``;`` e devolve o vencedor. Em empate ou ausência de
+    ambos, devolve ``DEFAULT_SEPARATOR`` (``,``).
+
+    Por que isso importa: bases públicas brasileiras (DATASUS, CKAN
+    do MS) trocam o separador entre anos sem aviso. Hardcodar quebra
+    silenciosamente — o parser produz 1 coluna gigante com a linha
+    inteira, e o erro só aparece muito downstream.
+    """
+    with csv_path.open("rb") as fh:
+        header_bytes = fh.readline()
+    header = header_bytes.decode(CSV_ENCODING, errors="replace")
+    counts = {sep: header.count(sep) for sep in CANDIDATE_SEPARATORS}
+    best_sep, best_count = max(counts.items(), key=lambda kv: kv[1])
+    if best_count == 0:
+        logger.warning(
+            "Nenhum separador candidato no header de %s — usando default %r",
+            csv_path.name,
+            DEFAULT_SEPARATOR,
+        )
+        return DEFAULT_SEPARATOR
+    if list(counts.values()).count(best_count) > 1:
+        logger.warning(
+            "Empate de separadores em %s (%s) — usando default %r",
+            csv_path.name,
+            counts,
+            DEFAULT_SEPARATOR,
+        )
+        return DEFAULT_SEPARATOR
+    return best_sep
+
+
 def _sha256_of(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:
@@ -476,10 +515,11 @@ def convert_to_parquet(result: IngestResult) -> list[Path]:
             raise FileNotFoundError(f"CSV não encontrado: {csv_path}")
 
         target_parquet = partition_dir / _parquet_filename(record.year)
-        logger.info("Lendo CSV %s", csv_path)
+        separator = _detect_separator(csv_path)
+        logger.info("Lendo CSV %s (separator=%r)", csv_path, separator)
         df = pl.read_csv(
             csv_path,
-            separator=CSV_SEPARATOR,
+            separator=separator,
             encoding=CSV_ENCODING,
             infer_schema_length=0,
             truncate_ragged_lines=False,
