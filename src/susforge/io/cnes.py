@@ -393,12 +393,38 @@ def convert_to_parquet(result: IngestResult) -> Path:
     return target_parquet
 
 
+def latest_extraction_date() -> date:
+    """Data da última extração registrada — para downstream (Silver/Gold)."""
+    manifest = _load_manifest()
+    if manifest.last_extraction is None:
+        raise RuntimeError(
+            "Nenhuma extração CNES disponível — rode 'bronze_cnes_estabelecimentos'"
+        )
+    return manifest.last_extraction.extraction_date
+
+
+def latest_parquet_path() -> Path:
+    """Path do Parquet mais recente — para downstream (Silver/Gold)."""
+    manifest = _load_manifest()
+    if (
+        manifest.last_extraction is None
+        or manifest.last_extraction.parquet_path is None
+    ):
+        raise RuntimeError(
+            "Parquet CNES ausente — rode 'bronze_cnes_estabelecimentos' "
+            "ou aguarde a conversão concluir"
+        )
+    return Path(manifest.last_extraction.parquet_path)
+
+
 __all__ = [
     "DATASET",
     "SOURCE_URL",
     "ExtractionRecord",
     "IngestResult",
     "Manifest",
-    "ingest_raw",
     "convert_to_parquet",
+    "ingest_raw",
+    "latest_extraction_date",
+    "latest_parquet_path",
 ]
