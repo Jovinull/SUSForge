@@ -347,6 +347,14 @@ def convert_to_parquet(result: IngestResult) -> Path:
     return target_parquet
 
 
+def latest_extraction_date() -> date:
+    """Data da última extração — para downstream Silver/Gold."""
+    manifest = _load_manifest()
+    if manifest.last_extraction is None:
+        raise RuntimeError("Nenhuma extração UBS disponível — rode 'bronze_ubs'")
+    return manifest.last_extraction.extraction_date
+
+
 __all__ = [
     "DATASET",
     "SOURCE_URL",
@@ -355,4 +363,5 @@ __all__ = [
     "Manifest",
     "convert_to_parquet",
     "ingest_raw",
+    "latest_extraction_date",
 ]
