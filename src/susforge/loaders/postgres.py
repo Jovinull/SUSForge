@@ -37,8 +37,18 @@ def get_connection() -> PgConnection:
     return psycopg2.connect(get_settings().database.dsn)
 
 
-def execute_ddl(ddl_path: Path, *, conn: PgConnection | None = None) -> None:
-    """Aplica um arquivo SQL idempotente (CREATE TABLE IF NOT EXISTS, etc.)."""
+def execute_ddl(ddl_path: Path, *, conn: PgConnection | None = None) -> int:
+    """Aplica um arquivo SQL multi-statement (DDL+DML idempotentes).
+
+    Útil tanto para schemas (``CREATE TABLE IF NOT EXISTS``) quanto
+    para ELT in-database (``TRUNCATE`` + ``INSERT ... SELECT``).
+
+    Returns:
+        ``cur.rowcount`` da ÚLTIMA instrução executada. Para um SQL
+        do tipo ``CREATE; TRUNCATE; INSERT``, isso é o número de
+        linhas inseridas. Para um SQL só de DDL, será ``-1`` (psycopg2
+        devolve isso quando a instrução não toca em linhas).
+    """
     if not ddl_path.exists():
         raise FileNotFoundError(ddl_path)
     sql = ddl_path.read_text(encoding="utf-8")
@@ -50,11 +60,37 @@ def execute_ddl(ddl_path: Path, *, conn: PgConnection | None = None) -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(sql)
+            rowcount = int(cur.rowcount)
         conn.commit()
-        logger.info("DDL aplicado: %s", ddl_path.name)
+        logger.info("✓ %s aplicado (rowcount=%d)", ddl_path.name, rowcount)
+        return rowcount
     except Exception:
         conn.rollback()
         raise
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def count_rows(
+    schema: str,
+    table: str,
+    *,
+    where: str | None = None,
+    conn: PgConnection | None = None,
+) -> int:
+    """Helper ``SELECT count(*)`` para relatórios pós-carga."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
+    assert conn is not None
+    try:
+        with conn.cursor() as cur:
+            sql = f'SELECT count(*) FROM "{schema}"."{table}"'
+            if where:
+                sql += f" WHERE {where}"
+            cur.execute(sql)
+            return int(cur.fetchone()[0])
     finally:
         if own_conn:
             conn.close()
@@ -179,6 +215,7 @@ def replace_partition(
 
 
 __all__ = [
+    "count_rows",
     "execute_ddl",
     "get_connection",
     "replace_partition",
