@@ -447,6 +447,17 @@ def convert_to_parquet(result: IngestResult) -> list[Path]:
     return targets
 
 
+def latest_extraction_date() -> date:
+    """Data da última extração — para downstream Silver/Gold."""
+    manifest = _load_manifest()
+    if manifest.last_extraction is None:
+        raise RuntimeError(
+            "Nenhuma extração COVID-Ocupação disponível — "
+            "rode 'bronze_covid_ocupacao'"
+        )
+    return manifest.last_extraction.extraction_date
+
+
 __all__ = [
     "AVAILABLE_YEARS",
     "BASE_URL",
@@ -458,4 +469,5 @@ __all__ = [
     "YearRecord",
     "convert_to_parquet",
     "ingest_raw",
+    "latest_extraction_date",
 ]
