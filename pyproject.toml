@@ -17,7 +17,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 authors = [
-    { name = "WMSaúde", email = "desenvolvimento@wmsaude.com.br" },
+    { name = "SUSForge" },
 ]
 keywords = ["datasus", "opendatasus", "medallion", "data-warehouse", "polars", "airflow"]
 classifiers = [
