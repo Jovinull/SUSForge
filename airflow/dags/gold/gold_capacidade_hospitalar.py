@@ -59,8 +59,19 @@ DEFAULT_ARGS = {
     doc_md=__doc__,
 )
 def gold_capacidade_hospitalar() -> None:
+    @task(task_id="ensure_dominios")
+    def ensure_dominios() -> int:
+        """Cria/recarga das tabelas de domínio curadas (decodificação)."""
+        silver_dir = get_settings().project_root / "sql" / "silver"
+        execute_ddl(silver_dir / "014_dominio_tp_unidade.sql")
+        execute_ddl(silver_dir / "015_dominio_natureza_juridica.sql")
+        tp = count_rows("silver", "dominio_tp_unidade")
+        nj = count_rows("silver", "dominio_natureza_juridica")
+        print(f"dominios: tp_unidade={tp} natureza_jur={nj}")
+        return tp + nj
+
     @task(task_id="build_dim_estabelecimento")
-    def build_dim() -> int:
+    def build_dim(_dominios: int) -> int:
         """TRUNCATE + INSERT da dimensão (recriação total)."""
         sql = _sql_dir() / "020_dim_estabelecimento.sql"
         rows = execute_ddl(sql)
@@ -83,7 +94,7 @@ def gold_capacidade_hospitalar() -> None:
         )
         return total
 
-    build_fato(build_dim())
+    build_fato(build_dim(ensure_dominios()))
 
 
 gold_capacidade_hospitalar()

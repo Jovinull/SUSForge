@@ -66,7 +66,24 @@ def gold_ocupacao_covid() -> None:
         )
         return total
 
-    build_fato()
+    @task(task_id="build_fato_pressao_uti_covid")
+    def build_pressao(_dep: int) -> int:
+        """Fato derivada — cruzamento Leitos × COVID.
+
+        Depende de ``gold.fato_ocupacao_covid`` E ``gold.fato_leitos_anual``
+        já carregadas. Se a fato de leitos não estiver atualizada,
+        a pressão refletirá o último snapshot disponível.
+        """
+        sql = _sql_dir() / "025_fato_pressao_uti_covid.sql"
+        rows = execute_ddl(sql)
+        total = count_rows("gold", "fato_pressao_uti_covid")
+        print(
+            f"gold.fato_pressao_uti_covid: {total:,} linhas "
+            f"(insert rowcount={rows:,})"
+        )
+        return total
+
+    build_pressao(build_fato())
 
 
 gold_ocupacao_covid()
